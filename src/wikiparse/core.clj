@@ -57,7 +57,7 @@
   [wikimedia-elems]
   (filter (match-tag :page) wikimedia-elems))
 
-(defn parse-xml
+(defn xml->pages
   [parsed]
   (map (comp (elem->map page-mappers) :content)
        (filter-page-elems (:content parsed))))
@@ -70,6 +70,10 @@
           "en-wikipedia" "page"
           (es-bulk/bulk-index pages)))
 
+(defn es-format-pages
+  [pages]
+  (map (fn [{id :id :as page}] (dissoc (assoc page :_id id) :id)) pages))
+
 (defn index-pages
   [pages callback]
   (map (fn [ppart]
@@ -79,17 +83,44 @@
 
 ;; Bootstrap
 
+(def page-mapping
+  {
+   :properties
+    {
+     :title {
+             :type :multi_field
+             :fields 
+             {
+              :title_snow {:type :string :analyzer :snowball}
+              :title_exact {:type :string :index :not_analyzed}
+              }
+             }
+     :ns {:type :string :index :not_analyzed}
+     :redirect {:type :string :index :not_analyzed}
+     :text {
+            :type :multi_field
+            :fields 
+            {
+             :text_snow {:type :string :analyzer :snowball}
+             :text_exact {:type :string :index :not_analyzed}
+             }
+            }
+     }
+   }
+)
+
 (defn ensure-index
   [name]
   (when (not (es-index/exists? name))
     (println (format "Creating index %s" name))
-    (es-index/create name)))
+    (es-index/create name :mappings {:page page-mapping})))
 
 (defn index-dump
   [path callback]
   (-> (bz2-reader path)
       (xml/parse)
-      (parse-xml)
+      (xml->pages)
+      (es-format-pages)
       (index-pages callback)))
 
 (defn -main
