@@ -97,6 +97,6 @@
   (esr/connect! es-url)
   (ensure-index "en-wikipedia")
   (let [counter (AtomicLong.)
-        callback (fn [pages] println (format "+ %s pages" (.addAndGet counter (count pages))))]
+        callback (fn [pages] (println (format "+ %s pages" (.addAndGet counter (count pages)))))]
     (dorun (index-dump path callback))
     (println (format "Indexed %s pages" (.get counter)))))
