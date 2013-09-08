@@ -75,7 +75,7 @@
   (map (fn [ppart]
          (bulk-index-pages ppart)
          (callback ppart))
-       (partition-all 10000 pages)))
+       (partition-all 1000 pages)))
 
 ;; Bootstrap
 
