@@ -81,12 +81,12 @@
          (callback ppart))
        (partition-all 1000 pages)))
 
-;; Bootstrap
-
 (def page-mapping
   {
    :properties
     {
+     :ns {:type :string :index :not_analyzed}
+     :redirect {:type :string :index :not_analyzed}
      :title {
              :type :multi_field
              :fields 
@@ -95,8 +95,6 @@
               :title_exact {:type :string :index :not_analyzed}
               }
              }
-     :ns {:type :string :index :not_analyzed}
-     :redirect {:type :string :index :not_analyzed}
      :text {
             :type :multi_field
             :fields 
@@ -109,6 +107,8 @@
    }
 )
 
+;; Bootstrap + Run
+
 (defn ensure-index
   [name]
   (when (not (es-index/exists? name))
@@ -117,17 +117,22 @@
 
 (defn index-dump
   [path callback]
-  (-> (bz2-reader path)
-      (xml/parse)
-      (xml->pages)
-      (es-format-pages)
-      (index-pages callback)))
+  ;; Get a reader for the bz2 file
+  (-> (bz2-reader path) 
+      ;; Return a data.xml lazy parse-seq
+      (xml/parse)       
+      ;; turn the seq of elements into a seq of maps
+      (xml->pages)      
+      ;; re-map fields for elasticsearch
+      (es-format-pages) 
+      ;; send the fully formatted fields to elasticsearch
+      (index-pages callback))) ;
 
 (defn -main
   [path es-url & args]
   (esr/connect! es-url)
   (ensure-index "en-wikipedia")
   (let [counter (AtomicLong.)
-        callback (fn [pages] (println (format "+ %s pages" (.addAndGet counter (count pages)))))]
+        callback (fn [pages] (println (format "@ %s pages" (.addAndGet counter (count pages)))))]
     (dorun (index-dump path callback))
     (println (format "Indexed %s pages" (.get counter)))))
