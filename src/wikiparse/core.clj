@@ -95,17 +95,23 @@
               :title_exact {:type :string :index :not_analyzed}
               }
              }
-     :text {
-            :type :multi_field
-            :fields 
-            {
-             :text_snow {:type :string :analyzer :snowball}
-             :text_exact {:type :string :index :not_analyzed}
-             }
-            }
+     :revision {
+                :properties {
+                             :format {:type :string}
+                             :date {:type :date :format "dateOptionalTime"}
+                             :text {
+                                    :type :multi_field
+                                    :fields 
+                                    {
+                                     :text_snow {:type :string :analyzer :snowball}
+                                     :text_exact {:type :string :index :not_analyzed}
+                                     }
+                                    }
+                             }
+                }
      }
    }
-)
+  )
 
 ;; Bootstrap + Run
 
