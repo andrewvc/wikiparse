@@ -31,6 +31,13 @@
 
 (def int-mapper #(Integer/parseInt (text-mapper %)))
 
+(defn attr-mapper
+  [attr]
+  (fn [{attrs :attrs}]
+    (get attrs attr)))
+
+  
+
 (def revision-mapper
   (comp 
    (elem->map 
@@ -43,7 +50,7 @@
   {:title text-mapper
    :ns int-mapper
    :id int-mapper
-   :redirect text-mapper
+   :redirect (attr-mapper :title)
    :revision revision-mapper})
 
 ;; Parse logic
@@ -73,6 +80,10 @@
 (defn es-format-pages
   [pages]
   (map (fn [{id :id :as page}] (dissoc (assoc page :_id id) :id)) pages))
+
+(defn filter-pages
+  [pages]
+  (filter #(= 0 (:ns %)) pages))
 
 (defn index-pages
   [pages callback]
@@ -122,17 +133,19 @@
     (es-index/create name :mappings {:page page-mapping})))
 
 (defn index-dump
-  [path callback]
+  [rdr callback]
   ;; Get a reader for the bz2 file
-  (-> (bz2-reader path) 
+  (-> rdr
       ;; Return a data.xml lazy parse-seq
       (xml/parse)       
       ;; turn the seq of elements into a seq of maps
       (xml->pages)      
+      ;; Filter only ns 0 pages (only include 'normal' wikipedia articles)
+      (filter-pages)
       ;; re-map fields for elasticsearch
       (es-format-pages) 
       ;; send the fully formatted fields to elasticsearch
-      (index-pages callback))) ;
+      (index-pages callback)))
 
 (defn -main
   [path es-url & args]
@@ -140,5 +153,6 @@
   (ensure-index "en-wikipedia")
   (let [counter (AtomicLong.)
         callback (fn [pages] (println (format "@ %s pages" (.addAndGet counter (count pages)))))]
-    (dorun (index-dump path callback))
+    (with-open [rdr (bz2-reader path) ]
+      (dorun (index-dump rdr callback)))
     (println (format "Indexed %s pages" (.get counter)))))
