@@ -103,6 +103,7 @@
              :fields 
              {
               :title_snow {:type :string :analyzer :snowball}
+              :title_simple {:type :string :analyzer :simple}
               :title_exact {:type :string :index :not_analyzed}
               }
              }
@@ -115,6 +116,7 @@
                                     :fields 
                                     {
                                      :text_snow {:type :string :analyzer :snowball}
+                                     :text_simple {:type :string :analyzer :simple}
                                      :text_exact {:type :string :index :not_analyzed}
                                      }
                                     }
