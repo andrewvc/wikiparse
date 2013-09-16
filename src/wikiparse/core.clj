@@ -5,7 +5,8 @@
             [clojurewerkz.elastisch.rest.index :as es-index]
             [clojurewerkz.elastisch.rest.bulk :as es-bulk])
   (:import (org.apache.commons.compress.compressors.bzip2 BZip2CompressorInputStream)
-           (java.util.concurrent.atomic AtomicLong)))
+           (java.util.concurrent.atomic AtomicLong))
+  (:gen-class))
 
 (defn bz2-reader
   "Returns a streaming Reader for the given compressed BZip2
@@ -148,4 +149,5 @@
         callback (fn [pages] (println (format "@ %s pages" (.addAndGet counter (count pages)))))]
     (with-open [rdr (bz2-reader path) ]
       (dorun (index-dump rdr callback)))
-    (println (format "Indexed %s pages" (.get counter)))))
+    (println (format "Indexed %s pages" (.get counter))))
+  (System/exit 0))
