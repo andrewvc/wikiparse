@@ -66,7 +66,7 @@
 
 (defn xml->pages
   [parsed]
-  (map (comp (elem->map page-mappers) :content)
+  (pmap (comp (elem->map page-mappers) :content)
        (filter-page-elems (:content parsed))))
 
 ;; Elasticsearch indexing
@@ -87,7 +87,7 @@
 
 (defn index-pages
   [pages callback]
-  (map (fn [ppart]
+  (pmap (fn [ppart]
          (bulk-index-pages ppart)
          (callback ppart))
        (partition-all 1000 pages)))
@@ -104,9 +104,7 @@
              {
               :title_snow {:type :string :analyzer :snowball}
               :title_simple {:type :string :analyzer :simple}
-              :title_exact {:type :string :index :not_analyzed}
-              }
-             }
+              :title_exact {:type :string :index :not_analyzed}}}
      :revision {
                 :properties {
                              :format {:type :string}
@@ -117,14 +115,7 @@
                                     {
                                      :text_snow {:type :string :analyzer :snowball}
                                      :text_simple {:type :string :analyzer :simple}
-                                     :text_exact {:type :string :index :not_analyzed}
-                                     }
-                                    }
-                             }
-                }
-     }
-   }
-  )
+                                     :text_exact {:type :string :index :not_analyzed}}}}}}})
 
 ;; Bootstrap + Run
 
