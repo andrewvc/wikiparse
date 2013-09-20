@@ -116,7 +116,7 @@
                                     {
                                      :text_snow {:type :string :analyzer :snowball}
                                      :text_simple {:type :string :analyzer :simple}
-                                     :text_exact {:type :string :index :not_analyzed}}}}}}})
+                                     }}}}}})
 
 ;; Bootstrap + Run
 
