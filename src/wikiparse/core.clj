@@ -136,8 +136,8 @@
              :type :multi_field
              :fields 
              {
-              :title_snow {:type :string :analyzer :snowball}
-              :title_simple {:type :string :analyzer :simple}}}
+              :body_snow {:type :string :analyzer :snowball}
+              :body_simple {:type :string :analyzer :simple}}}
      :suggest {
                :type :completion
                :index_analyzer :simple
