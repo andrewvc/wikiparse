@@ -137,7 +137,11 @@
              :fields 
              {
               :title_snow {:type :string :analyzer :snowball}
-              :title_simple {:type :string :analyzer :simple}}}}})
+              :title_simple {:type :string :analyzer :simple}}}
+     :suggest {
+               :type :completion
+               :index_analyzer :simple
+               :search_analyzer :simple}}})
 
 ;; Bootstrap + Run
 
