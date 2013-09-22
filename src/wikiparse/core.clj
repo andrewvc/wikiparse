@@ -87,10 +87,14 @@
   (let [target-title (or redirect title)]
     [{:update {:_id (string/lower-case target-title) :_index :en-wikipedia :_type :page}}
      {:script "if (is_redirect) {ctx._source.redirects += redirect};
-             if (!is_redirect) { ctx._source.title = title; ctx._source.body = body};"
-      :params {:redirect title, :title target-title, :body text :is_redirect (boolean redirect)}
-      :upsert {:title target-title 
+               ctx._source.suggest.input += title;
+               if (!is_redirect) { ctx._source.title = title; ctx._source.body = body};"
+      :params {:redirect title, :title title 
+               :target_title target-title, :body text 
+               :is_redirect (boolean redirect)}
+      :upsert {:title target-title
                :redirects (if redirect [title] [])
+               :suggest {:input [title] :output target-title}
                :body (when (not redirect) text)}}]))
 
 (defn es-format-pages
