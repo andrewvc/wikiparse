@@ -76,7 +76,7 @@
 (defn bulk-index-pages
   [pages]
   ;; unnest command / doc tuples with apply concat
-  (let [resp (es-bulk/bulk (apply concat pages))]
+  (let [resp (es-bulk/bulk (apply concat pages) :consistency "one")]
     (when ((comp not = :ok) resp)
       (println resp))))
 
@@ -110,7 +110,7 @@
   (pmap (fn [ppart]
          (bulk-index-pages ppart)
          (callback ppart))
-       (partition-all 1000 pages)))
+       (partition-all 100 pages)))
 
 (def page-mapping
   {
