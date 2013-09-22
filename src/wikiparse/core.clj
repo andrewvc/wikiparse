@@ -1,6 +1,7 @@
 (ns wikiparse.core
   (:require [clojure.data.xml :as xml]
             [clojure.java.io :as io]
+            [clojure.string :as string]
             [clojurewerkz.elastisch.rest :as esr]
             [clojurewerkz.elastisch.rest.index :as es-index]
             [clojurewerkz.elastisch.rest.bulk :as es-bulk])
@@ -74,13 +75,27 @@
 
 (defn bulk-index-pages
   [pages]
-  (es-bulk/bulk-with-index-and-type
-          "en-wikipedia" "page"
-          (es-bulk/bulk-index pages)))
+  ;; unnest command / doc tuples with apply concat
+  (let [resp (es-bulk/bulk (apply concat pages))]
+    (when ((comp not = :ok) resp)
+      (println resp))))
+
+(defn es-format-page
+  "formats the page as a bulk action tuple"
+  [{title :title redirect :redirect {text :text} :revision :as page}]
+  ;; the target-title ensures that redirects are filed under the article they are redirects for
+  (let [target-title (or redirect title)]
+    [{:update {:_id (string/lower-case target-title) :_index :en-wikipedia :_type :page}}
+     {:script "if (is_redirect) {ctx._source.redirects += redirect};
+             if (!is_redirect) { ctx._source.title = title; ctx._source.body = body};"
+      :params {:redirect title, :title target-title, :body text :is_redirect (boolean redirect)}
+      :upsert {:title target-title 
+               :redirects (if redirect [title] [])
+               :body (when (not redirect) text)}}]))
 
 (defn es-format-pages
   [pages]
-  (map (fn [{id :id :as page}] (dissoc (assoc page :_id id) :id)) pages))
+  (map es-format-page pages))
 
 (defn filter-pages
   [pages]
@@ -106,17 +121,19 @@
               :title_snow {:type :string :analyzer :snowball}
               :title_simple {:type :string :analyzer :simple}
               :title_exact {:type :string :index :not_analyzed}}}
-     :revision {
-                :properties {
-                             :format {:type :string}
-                             :date {:type :date :format "dateOptionalTime"}
-                             :text {
-                                    :type :multi_field
-                                    :fields 
-                                    {
-                                     :text_snow {:type :string :analyzer :snowball}
-                                     :text_simple {:type :string :analyzer :simple}
-                                     }}}}}})
+     :redirects {
+             :type :multi_field
+             :fields 
+             {
+              :title_snow {:type :string :analyzer :snowball}
+              :title_simple {:type :string :analyzer :simple}
+              :title_exact {:type :string :index :not_analyzed}}}
+     :body {
+             :type :multi_field
+             :fields 
+             {
+              :title_snow {:type :string :analyzer :snowball}
+              :title_simple {:type :string :analyzer :simple}}}}})
 
 ;; Bootstrap + Run
 
@@ -124,6 +141,7 @@
   [name]
   (when (not (es-index/exists? name))
     (println (format "Creating index %s" name))
+    (es-index/delete name)
     (es-index/create name :mappings {:page page-mapping})))
 
 (defn index-dump
