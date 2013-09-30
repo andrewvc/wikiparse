@@ -129,9 +129,9 @@
              :type :multi_field
              :fields 
              {
-              :title_snow {:type :string :analyzer :snowball}
-              :title_simple {:type :string :analyzer :simple}
-              :title_exact {:type :string :index :not_analyzed}}}
+              :redirects_snow {:type :string :analyzer :snowball}
+              :redirects_simple {:type :string :analyzer :simple}
+              :redirects_exact {:type :string :index :not_analyzed}}}
      :body {
              :type :multi_field
              :fields 
@@ -148,8 +148,9 @@
 (defn ensure-index
   [name]
   (when (not (es-index/exists? name))
-    (println (format "Creating index %s" name))
+    (println (format "Deleting index %s" name))
     (es-index/delete name)
+    (println (format "Creating index %s" name))
     (es-index/create name :mappings {:page page-mapping})))
 
 (defn index-dump
