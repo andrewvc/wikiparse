@@ -105,7 +105,7 @@
   [phase]
   (cond (= :redirects phase) :redirect
         (= :full phase) (comp nil? :redirect)
-        :else identity))
+        :else nil))
 
 (defn filter-pages
   [pages phase]
