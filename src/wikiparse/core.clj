@@ -101,9 +101,15 @@
   [pages]
   (map es-format-page pages))
 
+(defn phase-filter
+  [phase]
+  (cond (= :redirects phase) :redirect
+        (= :full phase) (comp nil? :redirect)
+        :else identity))
+
 (defn filter-pages
-  [pages]
-  (filter #(= 0 (:ns %)) pages))
+  [pages phase]
+  (filter (phase-filter phase) (filter #(= 0 (:ns %)) pages)))
 
 (defn index-pages
   [pages callback]
@@ -154,7 +160,7 @@
     (es-index/create name :mappings {:page page-mapping})))
 
 (defn index-dump
-  [rdr callback]
+  [rdr callback phase]
   ;; Get a reader for the bz2 file
   (-> rdr
       ;; Return a data.xml lazy parse-seq
@@ -162,7 +168,11 @@
       ;; turn the seq of elements into a seq of maps
       (xml->pages)      
       ;; Filter only ns 0 pages (only include 'normal' wikipedia articles)
-      (filter-pages)
+      ;; Also, indicate whether we're processing redirects or full articles
+      ;; in this pass. Redirects are indexed first, as re-tokenizing the full article
+      ;; text with an update query is expensive. We want the article text to be the last
+      ;; update
+      (filter-pages phase)
       ;; re-map fields for elasticsearch
       (es-format-pages) 
       ;; send the fully formatted fields to elasticsearch
@@ -175,6 +185,10 @@
   (let [counter (AtomicLong.)
         callback (fn [pages] (println (format "@ %s pages" (.addAndGet counter (count pages)))))]
     (with-open [rdr (bz2-reader path) ]
-      (dorun (index-dump rdr callback)))
+      (println "Processing redirects")
+      (dorun (index-dump rdr callback :redirects)))
+    (with-open [rdr (bz2-reader path) ]
+      (println "Processing full")
+      (dorun (index-dump rdr callback :full)))
     (println (format "Indexed %s pages" (.get counter))))
   (System/exit 0))
