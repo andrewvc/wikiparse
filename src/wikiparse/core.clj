@@ -184,9 +184,10 @@
   (let [[opts args banner]
         (cli/cli args
            "Usage: wikiparse [switches] path_to_bz2_wiki_dump"
+           ["-h" "--help" "display this help and exit"]
            ["--es" "elasticsearch connection string" :default "http://localhost:9200"]
            ["--index" "elasticsearch index name" :default "en-wikipedia"])]
-    (when (empty? args)
+    (when (or (empty? args) (:help opts))
       (println banner)
       (System/exit 1))
     [opts (first args)]))
