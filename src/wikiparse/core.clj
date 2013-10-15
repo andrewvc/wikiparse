@@ -185,6 +185,7 @@
         (cli/cli args
            "Usage: wikiparse [switches] path_to_bz2_wiki_dump"
            ["--es" "elasticsearch connection string" :default "http://localhost:9200"]
+           ["--index" "elasticsearch index name" :default "en-wikipedia"])]
     (when (empty? args)
       (println banner)
       (System/exit 1))
@@ -194,7 +195,7 @@
   [& args]
   (let [[opts path] (parse-cmdline args)]
     (esr/connect! (:es opts)
-    (ensure-index "en-wikipedia")
+    (ensure-index (:index opts))
     (let [counter (AtomicLong.)
           callback (fn [pages] (println (format "@ %s pages" (.addAndGet counter (count pages)))))]
       (with-open [rdr (bz2-reader path) ]
