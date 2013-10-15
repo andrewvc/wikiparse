@@ -2,6 +2,7 @@
   (:require [clojure.data.xml :as xml]
             [clojure.java.io :as io]
             [clojure.string :as string]
+            [clojure.tools.cli :as cli]
             [clojurewerkz.elastisch.rest :as esr]
             [clojurewerkz.elastisch.rest.index :as es-index]
             [clojurewerkz.elastisch.rest.bulk :as es-bulk])
@@ -178,17 +179,29 @@
       ;; send the fully formatted fields to elasticsearch
       (index-pages callback)))
 
+(defn parse-cmdline
+  [args]
+  (let [[opts args banner]
+        (cli/cli args
+           "Usage: wikiparse [switches] path_to_bz2_wiki_dump"
+           ["--es" "elasticsearch connection string" :default "http://localhost:9200"]
+    (when (empty? args)
+      (println banner)
+      (System/exit 1))
+    [opts (first args)]))
+
 (defn -main
-  [path es-url & args]
-  (esr/connect! es-url)
-  (ensure-index "en-wikipedia")
-  (let [counter (AtomicLong.)
-        callback (fn [pages] (println (format "@ %s pages" (.addAndGet counter (count pages)))))]
-    (with-open [rdr (bz2-reader path) ]
-      (println "Processing redirects")
-      (dorun (index-dump rdr callback :redirects)))
-    (with-open [rdr (bz2-reader path) ]
-      (println "Processing full")
-      (dorun (index-dump rdr callback :full)))
-    (println (format "Indexed %s pages" (.get counter))))
-  (System/exit 0))
+  [& args]
+  (let [[opts path] (parse-cmdline args)]
+    (esr/connect! (:es opts)
+    (ensure-index "en-wikipedia")
+    (let [counter (AtomicLong.)
+          callback (fn [pages] (println (format "@ %s pages" (.addAndGet counter (count pages)))))]
+      (with-open [rdr (bz2-reader path) ]
+        (println "Processing redirects")
+        (dorun (index-dump rdr callback :redirects)))
+      (with-open [rdr (bz2-reader path) ]
+        (println "Processing full")
+        (dorun (index-dump rdr callback :full)))
+      (println (format "Indexed %s pages" (.get counter))))
+    (System/exit 0))))
