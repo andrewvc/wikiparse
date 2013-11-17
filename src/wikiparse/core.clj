@@ -81,26 +81,28 @@
     (when ((comp not = :ok) resp)
       (println resp))))
 
-(defn es-format-page
-  "formats the page as a bulk action tuple"
-  [{title :title redirect :redirect {text :text} :revision :as page}]
-  ;; the target-title ensures that redirects are filed under the article they are redirects for
-  (let [target-title (or redirect title)]
-    [{:update {:_id (string/lower-case target-title) :_index :en-wikipedia :_type :page}}
-     {:script "if (is_redirect) {ctx._source.redirects += redirect};
+(defn es-page-formatter-for
+  "returns an fn that formats the page as a bulk action tuple for a given index"
+  [index-name]
+  (fn 
+    [{title :title redirect :redirect {text :text} :revision :as page}]
+    ;; the target-title ensures that redirects are filed under the article they are redirects for
+    (let [target-title (or redirect title)]
+      [{:update {:_id (string/lower-case target-title) :_index index-name :_type :page}}
+       {:script "if (is_redirect) {ctx._source.redirects += redirect};
                ctx._source.suggest.input += title;
                if (!is_redirect) { ctx._source.title = title; ctx._source.body = body};"
-      :params {:redirect title, :title title 
-               :target_title target-title, :body text 
-               :is_redirect (boolean redirect)}
-      :upsert {:title target-title
-               :redirects (if redirect [title] [])
-               :suggest {:input [title] :output target-title}
-               :body (when (not redirect) text)}}]))
+        :params {:redirect title, :title title 
+                 :target_title target-title, :body text 
+                 :is_redirect (boolean redirect)}
+        :upsert {:title target-title
+                 :redirects (if redirect [title] [])
+                 :suggest {:input [title] :output target-title}
+                 :body (when (not redirect) text)}}])))
 
 (defn es-format-pages
-  [pages]
-  (map es-format-page pages))
+  [pages index-name]
+  (map (es-page-formatter-for index-name) pages))
 
 (defn phase-filter
   [phase]
@@ -161,7 +163,7 @@
     (es-index/create name :mappings {:page page-mapping})))
 
 (defn index-dump
-  [rdr callback phase]
+  [rdr callback phase index-name]
   ;; Get a reader for the bz2 file
   (-> rdr
       ;; Return a data.xml lazy parse-seq
@@ -175,7 +177,7 @@
       ;; update
       (filter-pages phase)
       ;; re-map fields for elasticsearch
-      (es-format-pages) 
+      (es-format-pages index-name) 
       ;; send the fully formatted fields to elasticsearch
       (index-pages callback)))
 
@@ -199,11 +201,9 @@
     (ensure-index (:index opts))
     (let [counter (AtomicLong.)
           callback (fn [pages] (println (format "@ %s pages" (.addAndGet counter (count pages)))))]
-      (with-open [rdr (bz2-reader path) ]
-        (println "Processing redirects")
-        (dorun (index-dump rdr callback :redirects)))
-      (with-open [rdr (bz2-reader path) ]
-        (println "Processing full")
-        (dorun (index-dump rdr callback :full)))
-      (println (format "Indexed %s pages" (.get counter))))
+      (doseq [phase [:redirects :full]]
+        (with-open [rdr (bz2-reader path)]
+          (println (str "Processing " phase))
+          (dorun (index-dump rdr callback phase (:index opts)))))
+            (println (format "Indexed %s pages" (.get counter))))
     (System/exit 0))))
