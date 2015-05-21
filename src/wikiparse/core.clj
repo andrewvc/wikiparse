@@ -10,6 +10,33 @@
            (java.util.concurrent.atomic AtomicLong))
   (:gen-class))
 
+(def connection (atom nil))
+
+(defn ensure-index
+  [conn name]
+  (println "Creating index" conn)
+  (when (not (es-index/exists? conn name))
+    (es-index/create conn name)))
+
+(defn set-refresh-interval
+  [conn name]
+  (println "Setting low refresh interval for bulk indexing")
+  (es-index/update-settings conn name {:index {:refresh_interval 60 }} ))
+
+(defn connect!
+  "Connect once to the ES cluster"
+  [es]
+  (swap! connection
+         (fn [con]
+           (if-not con
+             (esr/connect (or es "http://localhost:9200"))
+             con))))
+
+(defmacro with-connection
+  [es bind & body]
+  `(let [~bind (connect! ~es)]
+     ~@body))
+
 (defn bz2-reader
   "Returns a streaming Reader for the given compressed BZip2
   file. Use within (with-open)."
@@ -38,8 +65,6 @@
   [attr]
   (fn [{attrs :attrs}]
     (get attrs attr)))
-
-  
 
 (def revision-mapper
   (comp 
@@ -75,9 +100,9 @@
 ;; Elasticsearch indexing
 
 (defn bulk-index-pages
-  [pages]
+  [conn pages]
   ;; unnest command / doc tuples with apply concat
-  (let [resp (es-bulk/bulk (apply concat pages) :consistency "one")]
+  (let [resp (es-bulk/bulk conn (apply concat pages) :consistency "one")]
     (when ((comp not = :ok) resp)
       (println resp))))
 
@@ -115,9 +140,9 @@
   (filter (phase-filter phase) (filter #(= 0 (:ns %)) pages)))
 
 (defn index-pages
-  [pages callback]
+  [pages conn callback]
   (pmap (fn [ppart]
-         (bulk-index-pages ppart)
+         (bulk-index-pages conn ppart)
          (callback ppart))
        (partition-all 100 pages)))
 
@@ -155,15 +180,15 @@
 ;; Bootstrap + Run
 
 (defn ensure-index
-  [name]
-  (when (not (es-index/exists? name))
+  [conn name]
+  (when (not (es-index/exists? conn name))
     (println (format "Deleting index %s" name))
     (es-index/delete name)
     (println (format "Creating index %s" name))
     (es-index/create name :mappings {:page page-mapping})))
 
 (defn index-dump
-  [rdr callback phase index-name]
+  [rdr conn callback phase index-name]
   ;; Get a reader for the bz2 file
   (-> rdr
       ;; Return a data.xml lazy parse-seq
@@ -179,7 +204,7 @@
       ;; re-map fields for elasticsearch
       (es-format-pages index-name) 
       ;; send the fully formatted fields to elasticsearch
-      (index-pages callback)))
+      (index-pages conn callback)))
 
 (defn parse-cmdline
   [args]
@@ -197,13 +222,16 @@
 (defn -main
   [& args]
   (let [[opts path] (parse-cmdline args)]
-    (esr/connect! (:es opts)
-    (ensure-index (:index opts))
-    (let [counter (AtomicLong.)
-          callback (fn [pages] (println (format "@ %s pages" (.addAndGet counter (count pages)))))]
-      (doseq [phase [:redirects :full]]
-        (with-open [rdr (bz2-reader path)]
-          (println (str "Processing " phase))
-          (dorun (index-dump rdr callback phase (:index opts)))))
-            (println (format "Indexed %s pages" (.get counter))))
-    (System/exit 0))))
+    (with-connection (:es opts) conn
+                     (ensure-index conn (:index opts))
+                     (set-refresh-interval conn (:index opts))
+                     (let [counter (AtomicLong.)
+                           callback (fn [pages] (println (format "@ %s pages" (.addAndGet counter (count pages)))))]
+                       (doseq [phase [:redirects :full]]
+                         (with-open [rdr (bz2-reader path)]
+                           (println (str "Processing " phase))
+                           (dorun (index-dump rdr conn callback phase (:index opts)))))
+                       (println (format "Indexed %s pages" (.get counter))))
+                     )
+    (System/exit 0)
+    ))
