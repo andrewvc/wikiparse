@@ -12,9 +12,9 @@
 
 (def connection (atom nil))
 
-(defn set-refresh-interval
+(defn tune-performance
   [conn name]
-  (println "Setting low refresh interval for bulk indexing")
+  (println "Tuning index performance")
   (es-index/update-settings conn name {:index
                                        {
                                         :refresh_interval 60
@@ -77,9 +77,9 @@
    :content))
 
 (def page-mappers
-  {:title text-mapper
-   :ns int-mapper
-   :id int-mapper
+  {:title    text-mapper
+   :ns       int-mapper
+   :id       int-mapper
    :redirect (attr-mapper :title)
    :revision revision-mapper})
 
@@ -105,20 +105,27 @@
   "returns an fn that formats the page as a bulk action tuple for a given index"
   [index-name]
   (fn 
-    [{title :title redirect :redirect {text :text} :revision :as page}]
+    [{title :title redirect :redirect {text :text timestamp :timestamp format :format} :revision :as page}]
     ;; the target-title ensures that redirects are filed under the article they are redirects for
+    (println "TS" timestamp)
     (let [target-title (or redirect title)]
       [{:update {:_id (string/lower-case target-title) :_index index-name :_type :page}}
        {:script "if (is_redirect) {ctx._source.redirects += redirect};
-               ctx._source.suggest.input += title;
-               if (!is_redirect) { ctx._source.title = title; ctx._source.body = body};"
-        :params {:redirect title, :title title 
-                 :target_title target-title, :body text 
-                 :is_redirect (boolean redirect)}
-        :upsert {:title target-title
-                 :redirects (if redirect [title] [])
-                 :suggest {:input [title] :output target-title}
-                 :body (when (not redirect) text)}}])))
+                   ctx._source.suggest.input += title;
+                 if (!is_redirect) {
+                   ctx._source.title = title;
+                   ctx._source.timestamp = timestamp;
+                   ctx._source.format = format;
+                   ctx._source.body = body;
+                 };"
+        :params {:redirect     title, :title title, :timestamp timestamp, :format format,
+                 :target_title target-title, :body text
+                 :is_redirect  (boolean redirect)}
+        :upsert (merge {:title     target-title
+                        :redirects (if redirect [title] [])
+                        :suggest   {:input [title] :output target-title}
+                        } (when (not redirect) {:body text :timestamp timestamp :format format}))
+        }])))
 
 (defn es-format-pages
   [pages index-name]
@@ -148,34 +155,39 @@
 
 (def page-mapping
   {
+   :_all {:_enabled false}
    :properties
     {
      :ns {:type :string :index :not_analyzed}
      :redirect {:type :string :index :not_analyzed}
      :title {
-             :type :multi_field
-             :fields 
+             :type :string
+             :fields
              {
               :title_snow {:type :string :analyzer :snowball}
               :title_simple {:type :string :analyzer :simple}
               :title_exact {:type :string :index :not_analyzed}}}
      :redirects {
-             :type :multi_field
-             :fields 
+             :type :string
+             :fields
              {
               :redirects_snow {:type :string :analyzer :snowball}
               :redirects_simple {:type :string :analyzer :simple}
               :redirects_exact {:type :string :index :not_analyzed}}}
      :body {
-             :type :multi_field
-             :fields 
+             :type :string
+             :fields
              {
               :body_snow {:type :string :analyzer :snowball}
               :body_simple {:type :string :analyzer :simple}}}
      :suggest {
                :type :completion
                :index_analyzer :simple
-               :search_analyzer :simple}}})
+               :search_analyzer :simple}
+     :timestamp {:type :date}
+     :format {:type :string :index :not_analyzed}
+     }
+   })
 
 ;; Bootstrap + Run
 
@@ -217,7 +229,7 @@
   (let [[opts path] (parse-cmdline args)]
     (with-connection (:es opts) conn
                      (ensure-index conn (:index opts))
-                     (set-refresh-interval conn (:index opts))
+                     (tune-performance conn (:index opts))
                      (let [counter (AtomicLong.)
                            callback (fn [pages] (println (format "@ %s pages" (.addAndGet counter (count pages)))))]
                        (doseq [phase [:redirects :full]]

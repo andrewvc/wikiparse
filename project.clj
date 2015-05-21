@@ -1,4 +1,4 @@
-(defproject wikiparse "0.2.5"
+(defproject wikiparse "0.2.6"
   :description "Import Wikipedia data into elasticsearch"
   :url "http://example.com/FIXME"
   :aot [wikiparse.core]
