@@ -97,16 +97,9 @@
 (defn xml->pages
   [parsed]
   (pmap (comp (elem->map page-mappers) :content)
-       (filter-page-elems (:content parsed))))
+        (filter-page-elems (:content parsed))))
 
 ;; Elasticsearch indexing
-
-(defn bulk-index-pages
-  [conn pages]
-  ;; unnest command / doc tuples with apply concat
-  (let [resp (es-bulk/bulk conn (apply concat pages) :consistency "one")]
-    (when ((comp not = :ok) resp)
-      (println resp))))
 
 (defn es-page-formatter-for
   "returns an fn that formats the page as a bulk action tuple for a given index"
@@ -141,12 +134,17 @@
   [pages phase]
   (filter (phase-filter phase) (filter #(= 0 (:ns %)) pages)))
 
+(defn bulk-index-pages
+  [conn pages]
+  ;; unnest command / doc tuples with apply concat
+  (let [resp (es-bulk/bulk conn (apply concat pages) :consistency "one")]
+    (when ((comp not = :ok) resp)
+      (println resp))))
+
 (defn index-pages
   [pages conn callback]
-  (pmap (fn [ppart]
-         (bulk-index-pages conn ppart)
-         (callback ppart))
-       (partition-all 100 pages)))
+  (bulk-index-pages conn pages)
+  (callback pages))
 
 (def page-mapping
   {
@@ -192,21 +190,14 @@
 (defn index-dump
   [rdr conn callback phase index-name]
   ;; Get a reader for the bz2 file
-  (-> rdr
-      ;; Return a data.xml lazy parse-seq
-      (xml/parse)       
-      ;; turn the seq of elements into a seq of maps
-      (xml->pages)      
-      ;; Filter only ns 0 pages (only include 'normal' wikipedia articles)
-      ;; Also, indicate whether we're processing redirects or full articles
-      ;; in this pass. Redirects are indexed first, as re-tokenizing the full article
-      ;; text with an update query is expensive. We want the article text to be the last
-      ;; update
-      (filter-pages phase)
-      ;; re-map fields for elasticsearch
-      (es-format-pages index-name) 
-      ;; send the fully formatted fields to elasticsearch
-      (index-pages conn callback)))
+  (dorun (pmap
+           (fn [pages]
+             (-> pages
+                 (filter-pages phase)
+                 (es-format-pages index-name)
+                 (index-pages conn callback))
+             )
+           (partition-all 25000 (xml->pages (xml/parse rdr))))))
 
 (defn parse-cmdline
   [args]
