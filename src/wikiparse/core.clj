@@ -12,12 +12,6 @@
 
 (def connection (atom nil))
 
-(defn ensure-index
-  [conn name]
-  (println "Creating index" conn)
-  (when (not (es-index/exists? conn name))
-    (es-index/create conn name)))
-
 (defn set-refresh-interval
   [conn name]
   (println "Setting low refresh interval for bulk indexing")
@@ -183,9 +177,9 @@
   [conn name]
   (when (not (es-index/exists? conn name))
     (println (format "Deleting index %s" name))
-    (es-index/delete name)
+    (es-index/delete conn name)
     (println (format "Creating index %s" name))
-    (es-index/create name :mappings {:page page-mapping})))
+    (es-index/create conn name :mappings {:page page-mapping})))
 
 (defn index-dump
   [rdr conn callback phase index-name]
