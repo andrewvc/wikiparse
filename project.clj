@@ -1,6 +1,7 @@
 (defproject wikiparse "0.2.2"
   :description "Import Wikipedia data into elasticsearch"
   :url "http://example.com/FIXME"
+  :aot [wikiparse.core]
   :main wikiparse.core
   :jvm-opts ["-Xmx2g" "-server"]
   :license {:name "Eclipse Public License"
