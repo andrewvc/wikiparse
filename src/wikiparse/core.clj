@@ -15,7 +15,15 @@
 (defn set-refresh-interval
   [conn name]
   (println "Setting low refresh interval for bulk indexing")
-  (es-index/update-settings conn name {:index {:refresh_interval 60 }} ))
+  (es-index/update-settings conn name {:index
+                                       {
+                                        :refresh_interval 60
+                                        :gateway {:local {:sync "60s"}}
+                                        :translog {
+                                                   :interval "60s"
+                                                   :flush_threshold_size "756mb"
+                                                   }
+                                        } } ))
 
 (defn connect!
   "Connect once to the ES cluster"
