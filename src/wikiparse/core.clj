@@ -107,7 +107,6 @@
   (fn 
     [{title :title redirect :redirect {text :text timestamp :timestamp format :format} :revision :as page}]
     ;; the target-title ensures that redirects are filed under the article they are redirects for
-    (println "TS" timestamp)
     (let [target-title (or redirect title)]
       [{:update {:_id (string/lower-case target-title) :_index index-name :_type :page}}
        {:script "if (is_redirect) {ctx._source.redirects += redirect};
@@ -197,7 +196,7 @@
     (println (format "Deleting index %s" name))
     (es-index/delete conn name)
     (println (format "Creating index %s" name))
-    (es-index/create conn name :mappings {:page page-mapping})))
+    (es-index/create conn name :settings {:index {:number_of_shards 1, :number_of_replicas 0}} :mappings {:page page-mapping})))
 
 (defn index-dump
   [rdr conn callback phase index-name]
