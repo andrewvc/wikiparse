@@ -134,7 +134,8 @@
 
 (defn phase-filter
   [phase]
-  (cond (= :redirects phase) :redirect
+  (cond (= :simultaneous) identity
+        (= :redirects phase) :redirect
         (= :full phase) (comp nil? :redirect)
         :else nil))
 
@@ -221,7 +222,7 @@
            "Usage: wikiparse [switches] path_to_bz2_wiki_dump"
            ["-h" "--help" "display this help and exit"]
            ["--es" "elasticsearch connection string" :default "http://localhost:9200"]
-           ["-p" "--phases" "Which phases to execute in which order" :default "redirects,full"]
+           ["-p" "--phases" "Which phases to execute in which order" :default "simultaneous"]
            ["--index" "elasticsearch index name" :default "en-wikipedia"]
            ["--batch" "Batch size for compute operations. Bigger batch requires more heap" :default "1024"])
         ]
