@@ -6,13 +6,30 @@
             [clojure.core.reducers :as r]
             [clojure.pprint :as pp]
             [clojurewerkz.elastisch.rest :as esr]
+            [clojurewerkz.elastisch.rest.document :as es-doc]
             [clojurewerkz.elastisch.rest.index :as es-index]
             [clojurewerkz.elastisch.rest.bulk :as es-bulk])
   (:import (org.apache.commons.compress.compressors.bzip2 BZip2CompressorInputStream)
            (java.util.concurrent.atomic AtomicLong))
   (:gen-class))
 
+(def script-id "wikiupdate")
+
+(def consistency "one")
+
 (def connection (atom nil))
+
+(def stream-processed (AtomicLong. 0))
+
+(def upsert-script "if (is_redirect) {ctx._source.redirects += redirect};
+                             ctx._source.suggest.input += title;
+                           if (!is_redirect) {
+                             ctx._source.suggest.input += title;
+                             ctx._source.title = title;
+                             ctx._source.timestamp = timestamp;
+                             ctx._source.format = format;
+                             ctx._source.body = body;
+                           };")
 
 (defn connect!
   "Connect once to the ES cluster"
@@ -98,14 +115,9 @@
     ;; the target-title ensures that redirects are filed under the article they are redirects for
     (let [target-title (or redirect title)]
       [{:update {:_id (string/lower-case target-title) :_index index-name :_type :page}}
-       {:script "if (is_redirect) {ctx._source.redirects += redirect};
-                   ctx._source.suggest.input += title;
-                 if (!is_redirect) {
-                   ctx._source.title = title;
-                   ctx._source.timestamp = timestamp;
-                   ctx._source.format = format;
-                   ctx._source.body = body;
-                 };"
+       {
+        :scripted_upsert true
+        :script upsert-script
         :params {:redirect     title, :title title, :timestamp timestamp, :format format,
                  :target_title target-title, :body text
                  :is_redirect  (boolean redirect)}
@@ -134,8 +146,10 @@
   [conn pages]
   ;; unnest command / doc tuples with apply concat
   ;(pp/pprint pages)
-  (let [resp (es-bulk/bulk conn pages :consistency "one")]
-    (when ((comp not = :ok) resp)
+  (let [resp (es-bulk/bulk conn pages :consistency consistency)]
+    (println "RANBULK" pages)
+    (println resp)
+    (when (:errors resp)
       (println resp))))
 
 (defn index-pages
@@ -192,30 +206,42 @@
                                 :index {
                                         :number_of_shards 1,
                                         :number_of_replicas 0
-                                        :refresh_interval 60
-                                        :gateway {:local {:sync "60s"}}
+                                        :refresh_interval "300s"
+                                        :gateway {:local {:sync "120s"}}
                                         :translog {
-                                                   :interval "60s"
-                                                   :flush_threshold_size "756mb"
+                                                   :interval "120s"
+                                                   :flush_threshold_size "960mb"
                                                    }
                                         }
+                                        :store {
+                                                :throttle {
+                                                           :max_bytes_per_sec "200mb"
+                                                           :type "none"
+                                                           }
                                 }
                      :mappings {
                                 :page page-mapping
+                                }
                                 })))
+
+(defn count-stream-elems
+  [chunk]
+  (.getAndAdd stream-processed (count chunk))
+  chunk)
 
 (defn index-dump
   [rdr conn callback phase index-name batch-size]
   ;; Get a reader for the bz2 file
   (dorun (pmap (fn [elems]
-                 (-> elems
-                     (xml->pages)
-                     (filter-pages phase)
-                     (es-format-pages index-name)
-                     (r/flatten)
-                     (r/foldcat)
-                     (index-pages conn callback)))
-                (partition-all batch-size (:content (xml/parse rdr))))))
+                (-> elems
+                    (count-stream-elems)
+                    (xml->pages)
+                    (filter-pages phase)
+                    (es-format-pages index-name)
+                    (r/flatten)
+                    (r/foldcat)
+                    (index-pages conn callback)))
+              (partition-all batch-size (:content (xml/parse rdr))))))
 
 (defn parse-cmdline
   [args]
@@ -226,7 +252,8 @@
            ["--es" "elasticsearch connection string" :default "http://localhost:9200"]
            ["-p" "--phases" "Which phases to execute in which order" :default "simultaneous"]
            ["--index" "elasticsearch index name" :default "en-wikipedia"]
-           ["--batch" "Batch size for compute operations. Bigger batch requires more heap" :default "256"])
+           ["--batch" "Batch size for compute operations. Bigger batch requires more heap" :default "256"]
+        )
         ]
     (when (or (empty? args) (:help opts))
       (println "Listening for input on stdin (try bzip2 -dcf en-wiki-dump.bz2 | java -jar wikiparse.jar)"))
@@ -236,7 +263,8 @@
   [name]
   {:name name
    :start (System/currentTimeMillis)
-   :processed (AtomicLong.)})
+   :processed (AtomicLong.)
+   })
 
 (def phase-stats (atom {}))
 
@@ -246,7 +274,8 @@
         now (System/currentTimeMillis)
         elapsed-secs (/ (- now start) 1000.0)
         rate  (/ total elapsed-secs)]
-    (println (format "Phase '%s' @ %s in %2f secs. (%2f p/s)"
+    (println (format "Stream@%d Phase '%s' @ %s in %2f secs. (%2f p/s)"
+                     (.get stream-processed)
                      name
                      (.get processed)
                      elapsed-secs
@@ -260,12 +289,20 @@
       (print-phase-stats stats)
       )))
 
+(defn create-update-script
+  [conn index-name]
+  (es-doc/create conn ".scripts" "groovy"
+                 {:script upsert-script}
+                 :id script-id
+                 ))
+
 
 (defn -main
   [& args]
   (let [[opts path] (parse-cmdline args)]
     (with-connection (:es opts) conn
                      (ensure-index conn (:index opts))
+                     (create-update-script conn (:index opts))
                      (doseq [phase (map keyword (string/split (:phases opts) #","))]
                        (let [stats (swap! phase-stats (fn [_] (new-phase-stats phase)))
                              batch-size (Integer/parseInt (:batch opts))
@@ -275,6 +312,7 @@
                                       (println "Batch size:" (:batch opts))
                                       (dorun
                                         (index-dump rdr conn callback phase (:index opts) batch-size)))]
+                         (.set stream-processed 0)
                          (if path
                            (with-open [rdr (bz2-reader path)] (runner rdr))
                            (runner *in*))
