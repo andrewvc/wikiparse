@@ -14,19 +14,6 @@
 
 (def connection (atom nil))
 
-(defn tune-performance
-  [conn name]
-  (println "Tuning index performance")
-  (es-index/update-settings conn name {:index
-                                       {
-                                        :refresh_interval 60
-                                        :gateway {:local {:sync "60s"}}
-                                        :translog {
-                                                   :interval "60s"
-                                                   :flush_threshold_size "756mb"
-                                                   }
-                                        } } ))
-
 (defn connect!
   "Connect once to the ES cluster"
   [es]
@@ -200,7 +187,22 @@
     (println (format "Deleting index %s" name))
     (es-index/delete conn name)
     (println (format "Creating index %s" name))
-    (es-index/create conn name :settings {:index {:number_of_shards 1, :number_of_replicas 0}} :mappings {:page page-mapping})))
+    (es-index/create conn name
+                     :settings {
+                                :index {
+                                        :number_of_shards 1,
+                                        :number_of_replicas 0
+                                        :refresh_interval 60
+                                        :gateway {:local {:sync "60s"}}
+                                        :translog {
+                                                   :interval "60s"
+                                                   :flush_threshold_size "756mb"
+                                                   }
+                                        }
+                                }
+                     :mappings {
+                                :page page-mapping
+                                })))
 
 (defn index-dump
   [rdr conn callback phase index-name batch-size]
@@ -264,7 +266,6 @@
   (let [[opts path] (parse-cmdline args)]
     (with-connection (:es opts) conn
                      (ensure-index conn (:index opts))
-                     (tune-performance conn (:index opts))
                      (doseq [phase (map keyword (string/split (:phases opts) #","))]
                        (let [stats (swap! phase-stats (fn [_] (new-phase-stats phase)))
                              batch-size (Integer/parseInt (:batch opts))
