@@ -3,6 +3,8 @@
             [clojure.java.io :as io]
             [clojure.string :as string]
             [clojure.tools.cli :as cli]
+            [clojure.core.reducers :as r]
+            [clojure.pprint :as pp]
             [clojurewerkz.elastisch.rest :as esr]
             [clojurewerkz.elastisch.rest.index :as es-index]
             [clojurewerkz.elastisch.rest.bulk :as es-bulk])
@@ -92,12 +94,12 @@
 
 (defn filter-page-elems
   [wikimedia-elems]
-  (filter (match-tag :page) wikimedia-elems))
+  (r/filter (match-tag :page) wikimedia-elems))
 
 (defn xml->pages
   [parsed]
-  (pmap (comp (elem->map page-mappers) :content)
-        (filter-page-elems (:content parsed))))
+  (r/map (comp (elem->map page-mappers) :content)
+        (filter-page-elems parsed)))
 
 ;; Elasticsearch indexing
 
@@ -128,7 +130,7 @@
 
 (defn es-format-pages
   [pages index-name]
-  (map (es-page-formatter-for index-name) pages))
+  (r/map (es-page-formatter-for index-name) pages))
 
 (defn phase-filter
   [phase]
@@ -138,19 +140,20 @@
 
 (defn filter-pages
   [pages phase]
-  (filter (phase-filter phase) (filter #(= 0 (:ns %)) pages)))
+  (r/filter (phase-filter phase) (r/filter #(= 0 (:ns %)) pages)))
 
 (defn bulk-index-pages
   [conn pages]
   ;; unnest command / doc tuples with apply concat
-  (let [resp (es-bulk/bulk conn (apply concat pages) :consistency "one")]
+  ;(pp/pprint pages)
+  (let [resp (es-bulk/bulk conn pages :consistency "one")]
     (when ((comp not = :ok) resp)
       (println resp))))
 
 (defn index-pages
-  [pages conn callback]
-  (bulk-index-pages conn pages)
-  (callback pages))
+  [bulk-lines conn callback]
+  (bulk-index-pages conn bulk-lines)
+  (callback bulk-lines))
 
 (def page-mapping
   {
@@ -199,16 +202,17 @@
     (es-index/create conn name :settings {:index {:number_of_shards 1, :number_of_replicas 0}} :mappings {:page page-mapping})))
 
 (defn index-dump
-  [rdr conn callback phase index-name]
+  [rdr conn callback phase index-name batch-size]
   ;; Get a reader for the bz2 file
-  (dorun (pmap
-           (fn [pages]
-             (-> pages
-                 (filter-pages phase)
-                 (es-format-pages index-name)
-                 (index-pages conn callback))
-             )
-           (partition-all 25000 (xml->pages (xml/parse rdr))))))
+  (dorun (pmap (fn [elems]
+                 (-> elems
+                     (xml->pages)
+                     (filter-pages phase)
+                     (es-format-pages index-name)
+                     (r/flatten)
+                     (r/foldcat)
+                     (index-pages conn callback)))
+                (partition-all batch-size (:content (xml/parse rdr))))))
 
 (defn parse-cmdline
   [args]
@@ -217,11 +221,42 @@
            "Usage: wikiparse [switches] path_to_bz2_wiki_dump"
            ["-h" "--help" "display this help and exit"]
            ["--es" "elasticsearch connection string" :default "http://localhost:9200"]
-           ["--index" "elasticsearch index name" :default "en-wikipedia"])]
+           ["--index" "elasticsearch index name" :default "en-wikipedia"]
+           ["--batch" "Batch size for compute operations. Bigger batch requires more heap" :default "25000"])
+        ]
     (when (or (empty? args) (:help opts))
       (println banner)
       (System/exit 1))
     [opts (first args)]))
+
+(defn new-phase-stats
+  [name]
+  {:name name
+   :start (System/currentTimeMillis)
+   :processed (AtomicLong.)})
+
+(def phase-stats (atom {}))
+
+(defn print-phase-stats
+  [{:keys [start processed name] :as stats}]
+  (let [total (.get processed)
+        now (System/currentTimeMillis)
+        elapsed-secs (/ (- now start) 1000.0)
+        rate  (/ total elapsed-secs)]
+    (println (format "Phase '%s' @ %s in %2f secs. (%2f p/s)"
+                     name
+                     (.get processed)
+                     elapsed-secs
+                     rate))))
+
+(defn make-callback
+  [{:keys [start processed]  :as stats}]
+  (fn [bulk-lines]
+    (let [processed-items (/ (count bulk-lines) 2)]
+      (.addAndGet processed processed-items)
+      (print-phase-stats stats)
+      )))
+
 
 (defn -main
   [& args]
@@ -229,13 +264,14 @@
     (with-connection (:es opts) conn
                      (ensure-index conn (:index opts))
                      (tune-performance conn (:index opts))
-                     (let [counter (AtomicLong.)
-                           callback (fn [pages] (println (format "@ %s pages" (.addAndGet counter (count pages)))))]
-                       (doseq [phase [:redirects :full]]
+                     (doseq [phase [:redirects :full]]
+                       (let [stats (swap! phase-stats (fn [_] (new-phase-stats phase)))]
                          (with-open [rdr (bz2-reader path)]
-                           (println (str "Processing " phase))
-                           (dorun (index-dump rdr conn callback phase (:index opts)))))
-                       (println (format "Indexed %s pages" (.get counter))))
-                     )
-    (System/exit 0)
-    ))
+                           (println "Starting phase:" phase)
+                           (println "Batch size:" (:batch opts))
+                           (dorun (index-dump rdr conn (make-callback stats) phase (:index opts) (Integer/parseInt (:batch opts)))))
+                         (print-phase-stats stats)
+                         (println "Completed phase:" phase)
+                         ))
+                     ))
+  (System/exit 0))
