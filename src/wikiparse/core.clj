@@ -221,12 +221,12 @@
            "Usage: wikiparse [switches] path_to_bz2_wiki_dump"
            ["-h" "--help" "display this help and exit"]
            ["--es" "elasticsearch connection string" :default "http://localhost:9200"]
+           ["-p" "--phases" "Which phases to execute in which order" :default "redirects,full"]
            ["--index" "elasticsearch index name" :default "en-wikipedia"]
-           ["--batch" "Batch size for compute operations. Bigger batch requires more heap" :default "25000"])
+           ["--batch" "Batch size for compute operations. Bigger batch requires more heap" :default "1024"])
         ]
     (when (or (empty? args) (:help opts))
-      (println banner)
-      (System/exit 1))
+      (println "Listening for input on stdin (try bzip2 -dcf en-wiki-dump.bz2 | java -jar wikiparse.jar)"))
     [opts (first args)]))
 
 (defn new-phase-stats
@@ -264,12 +264,18 @@
     (with-connection (:es opts) conn
                      (ensure-index conn (:index opts))
                      (tune-performance conn (:index opts))
-                     (doseq [phase [:redirects :full]]
-                       (let [stats (swap! phase-stats (fn [_] (new-phase-stats phase)))]
-                         (with-open [rdr (bz2-reader path)]
-                           (println "Starting phase:" phase)
-                           (println "Batch size:" (:batch opts))
-                           (dorun (index-dump rdr conn (make-callback stats) phase (:index opts) (Integer/parseInt (:batch opts)))))
+                     (doseq [phase (map keyword (string/split (:phases opts) #","))]
+                       (let [stats (swap! phase-stats (fn [_] (new-phase-stats phase)))
+                             batch-size (Integer/parseInt (:batch opts))
+                             callback (make-callback stats)
+                             runner (fn [rdr]
+                                      (println "Starting phase:" phase)
+                                      (println "Batch size:" (:batch opts))
+                                      (dorun
+                                        (index-dump rdr conn callback phase (:index opts) batch-size)))]
+                         (if path
+                           (with-open [rdr (bz2-reader path)] (runner rdr))
+                           (runner *in*))
                          (print-phase-stats stats)
                          (println "Completed phase:" phase)
                          ))
