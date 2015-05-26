@@ -224,7 +224,7 @@
            ["--es" "elasticsearch connection string" :default "http://localhost:9200"]
            ["-p" "--phases" "Which phases to execute in which order" :default "simultaneous"]
            ["--index" "elasticsearch index name" :default "en-wikipedia"]
-           ["--batch" "Batch size for compute operations. Bigger batch requires more heap" :default "1024"])
+           ["--batch" "Batch size for compute operations. Bigger batch requires more heap" :default "256"])
         ]
     (when (or (empty? args) (:help opts))
       (println "Listening for input on stdin (try bzip2 -dcf en-wiki-dump.bz2 | java -jar wikiparse.jar)"))
