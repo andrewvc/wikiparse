@@ -16,6 +16,17 @@ public class Main {
     public static WikiPage streamEnd = new WikiPage();
 
     public static void main(String[] args) {
-        Processor.process("wikisample.xml");
+        logger.info("Starting WikiParse");
+
+        String fn;
+        if (args.length > 0) {
+            fn = args[0];
+        } else {
+            fn = null;
+        }
+
+        Processor.process(fn);
+
+        logger.info("Finished processing");
     }
 }

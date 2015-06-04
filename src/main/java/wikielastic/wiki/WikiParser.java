@@ -5,6 +5,7 @@ import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamReader;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
+import java.io.InputStream;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import org.slf4j.Logger;
@@ -17,22 +18,29 @@ public class WikiParser implements Runnable {
     public static Logger logger = LoggerFactory.getLogger(WikiParser.class);
 
     public static void parse(WikiPageHandler handler, String filename) {
-        XMLStreamReader xmlr = wikiReader("wikisample.xml");
+        XMLStreamReader xmlr = wikiReader(filename);
         WikiParser parser = new WikiParser(handler, xmlr);
 
         parser.run();
     }
 
     public static XMLStreamReader wikiReader(String filename) {
-        FileInputStream fis = null;
+        InputStream fis;
 
-        try {
-            fis = new FileInputStream(filename);
-        } catch (FileNotFoundException e) {
-            logger.error("Could not find file: " + filename);
-            System.exit(1);
-            return null;
+        if (filename != null) {
+            logger.info("Will read from XML dump file: " + filename);
+            try {
+                fis = new FileInputStream(filename);
+            } catch (FileNotFoundException e) {
+                logger.error("Could not find file: " + filename);
+                System.exit(1);
+                return null;
+            }
+        } else {
+            logger.info("Will read from stdin");
+            fis = System.in;
         }
+
 
         XMLInputFactory xmlif = XMLInputFactory.newInstance();
 
@@ -106,16 +114,16 @@ public class WikiParser implements Runnable {
             if (!text.isEmpty()) {
                 switch (currentCtx) {
                     case "title":
-                        curPage.title = text;
+                        curPage.title = curPage.title != null ? curPage.title + text : text;
                         break;
                     case "text":
-                        curPage.text = text;
+                        curPage.text = curPage.text != null ? curPage.text + text : text;
                         break;
                     case "timestamp":
-                        curPage.timestamp = text;
+                        curPage.timestamp = curPage.timestamp != null ? curPage.timestamp + text : text;
                         break;
                     case "ns":
-                        curPage.ns = text;
+                        curPage.ns = curPage.ns != null ? curPage.ns + text : text;
                         break;
                 }
             }

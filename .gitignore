@@ -1,4 +1,4 @@
-tmp-redirects-*
+tmp-*
 
 # built application files
 *.apk

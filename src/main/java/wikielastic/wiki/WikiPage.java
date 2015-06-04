@@ -1,13 +1,22 @@
 package wikielastic.wiki;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+
 /**
  * Created by andrewcholakian on 6/1/15.
  */
+@JsonSerialize
 public class WikiPage {
+    @JsonProperty("title")
     public volatile String title;
+    @JsonProperty("text")
     public volatile String text;
+    @JsonProperty("redirect")
     public volatile String redirect;
+    @JsonProperty("timestamp")
     public volatile String timestamp;
+    @JsonProperty("ns")
     public volatile String ns;
 
     public boolean isRedirect() {

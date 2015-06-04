@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.MappingIterator;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.commons.io.FileUtils;
 import org.rocksdb.Options;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
@@ -12,6 +13,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import wikielastic.wiki.WikiPage;
 
+import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.LinkedList;
@@ -22,13 +24,18 @@ import java.util.UUID;
  * Created by andrewcholakian on 6/4/15.
  */
 public class RedirectDb {
-    String filename;
-    RocksDB db = null;
+    public final String filename;
+    public RocksDB db = null;
     ObjectMapper objectMapper = new ObjectMapper();
-    public static Logger logger = LoggerFactory.getLogger(RedirectDb.class);
+    public final static Logger logger = LoggerFactory.getLogger(RedirectDb.class);
 
     public RedirectDb() {
-        this.filename = "tmp-redirects-" + UUID.randomUUID().toString();
+        this.filename = "tmp-redirects";
+        try {
+            deleteDb();
+        } catch (IOException e) {
+            logger.error("Could not delete old redirects db: " + this.filename, e);
+        }
 
         RocksDB.loadLibrary();
         Options options = new Options().setCreateIfMissing(true);
@@ -39,6 +46,10 @@ public class RedirectDb {
             logger.error("Could not open rocksdb", e);
             System.exit(1);
         }
+    }
+
+    public void deleteDb() throws IOException {
+        FileUtils.deleteDirectory(new File(this.filename));
     }
 
     public void printRedirects() {
@@ -52,8 +63,6 @@ public class RedirectDb {
         if (!page.isRedirect()) {
             throw new InvalidPageTypeException(String.format("Page %s is not a redirect!", page));
         }
-
-        logger.info("Write redirect: " + page);
 
         try {
             byte[] key = page.redirect.getBytes();
