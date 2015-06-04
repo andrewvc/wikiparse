@@ -35,6 +35,7 @@ public class Processor implements Runnable {
     public void run() {
         readXmlToQueues();
         processRedirects();
+        redirectDb.printRedirects();
     }
 
     private void readXmlToQueues() {
