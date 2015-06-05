@@ -43,6 +43,8 @@ javadoc.options {
     addStringOption("parse-timeout", "10")
 }
 run {
+    standardInput = System.in // Needed to get stdin piping working
+
     systemProperty 'wikielastic.name', 'Jack'
       if ( project.hasProperty("appArgs") ) {
           args Eval.me(appArgs)

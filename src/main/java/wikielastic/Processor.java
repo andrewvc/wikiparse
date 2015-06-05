@@ -9,8 +9,6 @@ import wikielastic.wiki.WikiPageHandler;
 import wikielastic.wiki.WikiParser;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -23,9 +21,9 @@ public class Processor implements Runnable {
     private final static Logger logger = LoggerFactory.getLogger(Processor.class);
     private final static WikiPage streamEnd = new WikiPage();
 
-    private final BlockingQueue<WikiPage> redirectsQueue = new ArrayBlockingQueue<>(40960);
+    private final BlockingQueue<WikiPage> redirectsQueue = new ArrayBlockingQueue<>(128);
     // Smaller queue size here because these take up a lot more memory
-    private final BlockingQueue<WikiPage> articlesQueue = new ArrayBlockingQueue<>(2560);
+    private final BlockingQueue<WikiPage> articlesQueue = new ArrayBlockingQueue<>(128);
     public String filename;
     private final RedirectDb redirectDb = new RedirectDb();
     private final ProcessorStats processorStats = new ProcessorStats();
@@ -48,6 +46,7 @@ public class Processor implements Runnable {
                 readXmlToQueues();
             }
         });
+       xmlThread.setName("originXMLParser");
 
         Thread redirectThread = new Thread(new Runnable() {
             @Override
@@ -55,6 +54,7 @@ public class Processor implements Runnable {
                 processRedirects();
             }
         });
+        redirectThread.setName("tmpRedirectWriter");
 
         Thread articleThread = new Thread(new Runnable() {
             @Override
@@ -62,11 +62,11 @@ public class Processor implements Runnable {
                 processArticles();
             }
         });
+        articleThread.setName("tmpArticleWriter");
 
         TimerTask tt = new TimerTask() {
             @Override
             public void run() {
-
                 System.out.println("\n<< Stats >> ");
                 System.out.println(String.format("Runtime: %ds TotalTmpItems: %d, TmpRate: %f",
                         processorStats.runtime()/1000,
@@ -82,7 +82,6 @@ public class Processor implements Runnable {
             }
         };
         Timer t = new Timer();
-
 
         try {
             processorStats.tmpStartedAt = System.currentTimeMillis();
@@ -110,6 +109,8 @@ public class Processor implements Runnable {
         WikiPageHandler wikiPageHandler = new WikiPageHandler() {
             @Override
             public void handlePage(WikiPage page) {
+                processorStats.rawPagesProcessed.incrementAndGet();
+
                 if (page == null) {
                     logger.error("Unexpected null page! Cannot handle!");
                     System.exit(1);

@@ -5,9 +5,12 @@ import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamReader;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.zip.GZIPInputStream;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,6 +34,14 @@ public class WikiParser implements Runnable {
             logger.info("Will read from XML dump file: " + filename);
             try {
                 fis = new FileInputStream(filename);
+                if (filename.endsWith(".gz")) {
+                    try {
+                        logger.info("Will decode file as gzip");
+                        fis = new GZIPInputStream(fis);
+                    } catch (IOException e) {
+                        logger.warn("Error opening input stream as gzip");
+                    }
+                }
             } catch (FileNotFoundException e) {
                 logger.error("Could not find file: " + filename);
                 System.exit(1);
@@ -75,7 +86,6 @@ public class WikiParser implements Runnable {
         }
         started = true;
 
-
         try {
             while (xmlr.hasNext()) {
                 int eventType = xmlr.next();
@@ -108,24 +118,27 @@ public class WikiParser implements Runnable {
                 handler.handlePage(curPage);
             }
         } else if (xmlr.isCharacters() && !ctx.isEmpty()) {
-            String currentCtx = ctx.getFirst();
-            String text = xmlr.getText();
+            processCharacters(curPage, ctx.getFirst());
+        }
+    }
 
-            if (!text.isEmpty()) {
-                switch (currentCtx) {
-                    case "title":
-                        curPage.title = curPage.title != null ? curPage.title + text : text;
-                        break;
-                    case "text":
-                        curPage.text = curPage.text != null ? curPage.text + text : text;
-                        break;
-                    case "timestamp":
-                        curPage.timestamp = curPage.timestamp != null ? curPage.timestamp + text : text;
-                        break;
-                    case "ns":
-                        curPage.ns = curPage.ns != null ? curPage.ns + text : text;
-                        break;
-                }
+    private void processCharacters(WikiPage curPage, String currentCtx) {
+        String text = xmlr.getText();
+
+        if (!text.isEmpty()) {
+            switch (currentCtx) {
+                case "title":
+                    curPage.title = curPage.title != null ? curPage.title + text : text;
+                    break;
+                case "text":
+                    curPage.text = curPage.text != null ? curPage.text.append(text) : (new StringBuilder(text));
+                    break;
+                case "timestamp":
+                    curPage.timestamp = curPage.timestamp != null ? curPage.timestamp + text : text;
+                    break;
+                case "ns":
+                    curPage.ns = curPage.ns != null ? curPage.ns + text : text;
+                    break;
             }
         }
     }
