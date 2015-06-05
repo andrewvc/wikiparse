@@ -9,15 +9,15 @@ import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 @JsonSerialize
 public class WikiPage {
     @JsonProperty("title")
-    public String title;
+    public volatile String title;
     @JsonProperty("text")
-    public StringBuilder text;
+    public volatile StringBuilder text;
     @JsonProperty("redirect")
-    public String redirect;
+    public volatile String redirect;
     @JsonProperty("timestamp")
-    public String timestamp;
+    public volatile String timestamp;
     @JsonProperty("ns")
-    public String ns;
+    public volatile String ns;
 
     public boolean isRedirect() {
         return this.redirect != null;

@@ -21,12 +21,13 @@ public class Processor implements Runnable {
     private final static Logger logger = LoggerFactory.getLogger(Processor.class);
     private final static WikiPage streamEnd = new WikiPage();
 
-    private final BlockingQueue<WikiPage> redirectsQueue = new ArrayBlockingQueue<>(128);
-    // Smaller queue size here because these take up a lot more memory
-    private final BlockingQueue<WikiPage> articlesQueue = new ArrayBlockingQueue<>(128);
+    public final BlockingQueue<WikiPage> redirectsQueue = new ArrayBlockingQueue<>(128);
+    // Larger queue size here, these are always the bottleneck. Redirects will likely never block (very fast to write)
+    public final BlockingQueue<WikiPage> articlesQueue = new ArrayBlockingQueue<>(256);
     public String filename;
     private final RedirectDb redirectDb = new RedirectDb();
-    private final ProcessorStats processorStats = new ProcessorStats();
+
+    private final ProcessorStats processorStats = new ProcessorStats(this);
 
     public Processor(String filename) {
         this.filename = filename;
@@ -64,45 +65,26 @@ public class Processor implements Runnable {
         });
         articleThread.setName("tmpArticleWriter");
 
-        TimerTask tt = new TimerTask() {
-            @Override
-            public void run() {
-                System.out.println("\n<< Stats >> ");
-                System.out.println(String.format("Runtime: %ds TotalTmpItems: %d, TmpRate: %f",
-                        processorStats.runtime()/1000,
-                        processorStats.getTotalTmpItems(),
-                        processorStats.getTmpRate()
-                ));
-                System.out.println(String.format("Temp DB Items: Articles(%d) Redirects(%d)",
-                        processorStats.tmpArticlesProcessed.get(),
-                        processorStats.tmpRedirectsProcessed.get()));
-                System.out.println(String.format("Queues Levels: Articles(%d) Redirects(%d)",
-                        articlesQueue.size(),
-                        redirectsQueue.size()));
-            }
-        };
-        Timer t = new Timer();
-
         try {
-            processorStats.tmpStartedAt = System.currentTimeMillis();
+            processorStats.startProcessorStatsPrinting();
+
+            processorStats.signalTmpStart();
 
             xmlThread.start();
             redirectThread.start();
             articleThread.start();
 
-            t.scheduleAtFixedRate(tt,1000, 1000);
+            processorStats.signalTmpEnd();
 
             xmlThread.join();
             redirectThread.join();
             articleThread.join();
+
+            processorStats.stopProcessorStatsPrinting();
         } catch (InterruptedException e) {
             logger.error("Interrupted during main execution!", e);
             System.exit(1);
         }
-
-
-        //redirectDb.printRedirects();
-
     }
 
     private void readXmlToQueues() {

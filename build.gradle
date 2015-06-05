@@ -29,6 +29,7 @@ dependencies {
     compile 'com.fasterxml.jackson.core:jackson-core:2.5.3'
     compile 'com.fasterxml.jackson.core:jackson-databind:2.5.3'
     compile 'com.fasterxml.jackson.core:jackson-annotations:2.5.3'
+    compile 'com.fasterxml.jackson.dataformat:jackson-dataformat-smile:2.5.3'
     compile 'org.xerial.snappy:snappy-java:1.1.1.7'
     compile 'commons-io:commons-io:2.4'
 

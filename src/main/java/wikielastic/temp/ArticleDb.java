@@ -3,6 +3,7 @@ package wikielastic.temp;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.smile.SmileFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.xerial.snappy.SnappyOutputStream;
@@ -30,7 +31,7 @@ public class ArticleDb {
         os = new SnappyOutputStream(new FileOutputStream(filename));
         //os = new FileOutputStream(filename);
 
-        JsonFactory f = new JsonFactory();
+        SmileFactory f = new SmileFactory();
 
         jsonGenerator = f.createGenerator(os);
 
