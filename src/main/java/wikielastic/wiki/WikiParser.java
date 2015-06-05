@@ -13,6 +13,7 @@ import java.util.zip.GZIPInputStream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import wikielastic.StreamHandler;
 
 /**
  * Created by andrewcholakian on 6/1/15.
@@ -20,7 +21,7 @@ import org.slf4j.LoggerFactory;
 public class WikiParser implements Runnable {
     public static Logger logger = LoggerFactory.getLogger(WikiParser.class);
 
-    public static void parse(WikiPageHandler handler, String filename) {
+    public static void parse(StreamHandler handler, String filename) {
         XMLStreamReader xmlr = wikiReader(filename);
         WikiParser parser = new WikiParser(handler, xmlr);
 
@@ -66,13 +67,13 @@ public class WikiParser implements Runnable {
         }
     }
 
-    private WikiPageHandler handler;
+    private StreamHandler handler;
     private XMLStreamReader xmlr;
     private Deque<String> ctx;
     public boolean started = false;
     private WikiPage curPage = null;
 
-    WikiParser(WikiPageHandler handler, XMLStreamReader xmlr) {
+    WikiParser(StreamHandler handler, XMLStreamReader xmlr) {
         this.handler = handler;
         this.xmlr = xmlr;
         this.ctx = new ArrayDeque<String>();
@@ -115,7 +116,7 @@ public class WikiParser implements Runnable {
             ctx.pop();
             if (xmlr.getLocalName().equals("page")) {
                 logger.debug("Finished parsing page: " + curPage);
-                handler.handlePage(curPage);
+                handler.handleItem(curPage);
             }
         } else if (xmlr.isCharacters() && !ctx.isEmpty()) {
             processCharacters(curPage, ctx.getFirst());

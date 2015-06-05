@@ -1,17 +1,21 @@
 package wikielastic.temp;
 
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.smile.SmileFactory;
+import com.fasterxml.jackson.dataformat.smile.SmileGenerator;
+import com.fasterxml.jackson.dataformat.smile.SmileParser;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.xerial.snappy.SnappyInputStream;
 import org.xerial.snappy.SnappyOutputStream;
+import wikielastic.StreamHandler;
+import wikielastic.wiki.MergedWikiPage;
 import wikielastic.wiki.WikiPage;
 
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
+import java.io.*;
+import java.util.Iterator;
 
 /**
  * Created by andrewcholakian on 6/4/15.
@@ -19,38 +23,67 @@ import java.io.OutputStream;
 public class ArticleDb {
     public static final ObjectMapper objectMapper = new ObjectMapper();
     public final String filename;
-    public final static Logger logger = LoggerFactory.getLogger(RedirectDb.class);
-    OutputStream os;
-    JsonGenerator jsonGenerator;
+    public final static Logger logger = LoggerFactory.getLogger(ArticleDb.class);
+    private volatile OutputStream outputStream;
+    private volatile InputStream inputStream;
+    SmileGenerator smileGenerator;
 
     public ArticleDb(String filename) {
         this.filename = filename;
     }
 
-    public JsonGenerator initializeGenerator() throws IOException {
-        os = new SnappyOutputStream(new FileOutputStream(filename));
-        //os = new FileOutputStream(filename);
+    public SmileGenerator initializeGenerator() throws IOException {
+        File file = new File(filename);
+        if (file.exists()) file.delete();
 
-        SmileFactory f = new SmileFactory();
+        this.outputStream = new SnappyOutputStream(new FileOutputStream(filename));
+        SmileFactory smileFactory = new SmileFactory();
 
-        jsonGenerator = f.createGenerator(os);
+        smileGenerator = smileFactory.createGenerator(outputStream);
 
-        jsonGenerator.writeStartArray();
+        smileGenerator.writeStartArray();
 
-        jsonGenerator.setCodec(objectMapper);
-        return jsonGenerator;
+        smileGenerator.setCodec(objectMapper);
+        return smileGenerator;
     }
 
     public void writePage(WikiPage p) throws IOException {
-        jsonGenerator.writeObject(p);
+        smileGenerator.writeObject(p);
 
     }
 
     public void closeGenerator() throws IOException {
-        jsonGenerator.writeEndArray();
-        jsonGenerator.close();
-        os.close();
+        smileGenerator.writeEndArray();
+        smileGenerator.close();
+        outputStream.close();
+    }
+
+    public void parse(StreamHandler<MergedWikiPage> streamHandler) throws IOException {
+        this.inputStream = new SnappyInputStream(new FileInputStream(filename));
+        SmileFactory smileFactory = new SmileFactory();
+        SmileParser parser = smileFactory.createParser(inputStream);
+        parser.setCodec(objectMapper);
+
+        JsonToken token = parser.nextToken();
+        if (token != JsonToken.START_ARRAY) {
+            logger.error("Expected first token to be array start in article db!");
+            System.exit(1);
+        }
+        parser.nextToken();
+
+        Iterator<MergedWikiPage> objectIt = parser.readValuesAs(MergedWikiPage.class);
+        while (objectIt.hasNext()) {
+            MergedWikiPage next = objectIt.next();
+            streamHandler.handleItem(next);
+        }
+
+        streamHandler.handleEnd();
+        parser.close();
+        inputStream.close();
     }
 
 
+    public void closeParser() throws IOException {
+
+    }
 }

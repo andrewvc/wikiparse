@@ -29,8 +29,8 @@ public class RedirectDb {
     ObjectMapper objectMapper = new ObjectMapper();
     public final static Logger logger = LoggerFactory.getLogger(RedirectDb.class);
 
-    public RedirectDb() {
-        this.filename = "tmp-redirects";
+    public RedirectDb(String filename) {
+        this.filename = filename;
         try {
             deleteDb();
         } catch (IOException e) {
@@ -81,6 +81,10 @@ public class RedirectDb {
             logger.error("IO Exception writing redirect", e);
             System.exit(1);
         }
+    }
+
+    public List<String> getRedirects(String key) throws RocksDBException, IOException {
+        return getRedirects(key.getBytes());
     }
 
     // Returns list of redirects, returns an empty list when key is missing!

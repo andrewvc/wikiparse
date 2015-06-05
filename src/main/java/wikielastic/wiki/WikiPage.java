@@ -1,5 +1,6 @@
 package wikielastic.wiki;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 
@@ -19,10 +20,12 @@ public class WikiPage {
     @JsonProperty("ns")
     public volatile String ns;
 
+    @JsonIgnore
     public boolean isRedirect() {
         return this.redirect != null;
     }
 
+    @JsonIgnore
     public boolean isArticle() {
         return this.redirect == null;
     }
