@@ -133,7 +133,7 @@
 
 (defn phase-filter
   [phase]
-  (cond (= :simultaneous) identity
+  (cond (= :simultaneous phase) identity
         (= :redirects phase) :redirect
         (= :full phase) (comp nil? :redirect)
         :else nil))
